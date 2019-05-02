@@ -20,7 +20,6 @@ driver = webdriver.Chrome(executable_path= r"C:\Users\paquinte\Documents\chromed
 t = time.time()
 driver.set_page_load_timeout(10) # max time to load website
 
-
 ## Connect to the website ##
 try:
     driver.get('https://www.bvc.com.co/pps/tibco/portalbvc/Home/Mercados/enlinea/acciones')
