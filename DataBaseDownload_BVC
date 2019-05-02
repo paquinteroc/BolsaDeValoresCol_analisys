@@ -1,0 +1,122 @@
+from selenium import webdriver
+from bs4 import BeautifulSoup
+import requests
+import datetime
+import time
+import pandas as pd
+import os,glob
+from pathlib import Path
+from selenium.webdriver.chrome.options import Options
+
+## Set the folder where to download ##
+chrome_options = Options()
+chrome_options.add_experimental_option("prefs", {
+  "download.default_directory": r"C:\Users\paquinte\PycharmProjects\BolsaDeValoresCol_analisys",
+  "download.prompt_for_download": False,
+})
+
+driver = webdriver.Chrome(executable_path= r"C:\Users\paquinte\Documents\chromedriver.exe",
+                          chrome_options=chrome_options) # Set the driver
+t = time.time()
+driver.set_page_load_timeout(10) # max time to load website
+
+
+## Connect to the website ##
+try:
+    driver.get('https://www.bvc.com.co/pps/tibco/portalbvc/Home/Mercados/enlinea/acciones')
+except TimeoutException:
+    driver.execute_script("window.stop();")
+print('Time consuming:', time.time() - t)
+
+
+## THIS PIECE OF CODE IS TO EXTRACT THE FULL LIST OF STOCKS
+## Create emtpty list get the "specblue" elements, print them in a python list, and filter the empty strings and the strings with a blank space on them and rename them Keys
+# spec = driver.find_elements_by_class_name('specblue') # the stock names rare in blue
+# Keys = []
+# for i in spec:
+#     print (i.text)
+#     Keys.append(i.text)
+# filterKeys1 = [x for x in Keys if ( " " not in  x  ) ]
+# filtersKeys2 = [x for x in filterKeys1 if x != ""]
+# Keys= filtersKeys2 # Keys with the stocks names
+#
+# pd.DataFrame(Keys).to_csv('ListofStocks.csv', header=None,index=None) # print into file
+###UNTIL HERE ###
+
+
+Keys = pd.read_csv("ListofStocks.csv",header=None)[0].values.tolist()
+
+## Next set up the dates formats !!!
+
+format = '%Y-%m-%d' #format used on the website
+today = datetime.date.today()   # today
+s = today.strftime(format)
+delta_five_months = datetime.timedelta(5*365/12) #delta of 4 months
+previous_date = today - delta_five_months
+print(today.strftime(format))
+print(previous_date.strftime(format))
+
+
+#### DATA EXTRACTION #########
+
+Keys.remove("GEB") # GEB for some reason is not downloading as it should :(
+
+Keys= Keys[Keys.index('GRUBOLIVAR')+1:] #GRUBOLIVAR only has 3.5 years of data, it crashes the for loop, download the rest of the keys
+
+#outer for loops is on the keys= stock names
+for key in Keys:
+    driver.find_element_by_id("nemo").clear() #clear box
+    driver.find_element_by_id("nemo").send_keys(key) # write next key
+
+    Buscar = driver.find_element_by_xpath("""//a[@href="javascript:document.busqueda.submit();"]""")
+    Buscar.click() # search for the key
+
+
+    date_hasta = today
+    date_desde = today - delta_five_months
+
+    ## for loop because  maximum alloted download is six months of data
+    for i in range(10): ## pull data for last 10 *5 months -  maximum alloted download is six months of data
+
+        # FInd fechaIn box, change the attribute and insert the data
+        DateIn= driver.find_element_by_id("fechaIni")
+        driver.execute_script("arguments[0].removeAttribute('readonly')", DateIn);
+        DateIn.send_keys(date_desde.strftime(format))
+
+        DateOut= driver.find_element_by_id("fechaFin")
+        driver.execute_script("arguments[0].removeAttribute('readonly')", DateOut);
+        DateOut.send_keys(date_hasta.strftime(format))
+
+        Descargar = driver.find_element_by_id("texto_3") #find the descargar link and execute
+        Descargar.click()
+        driver.refresh() # refresh so past dates are deleted
+
+        date_hasta = date_desde # update for next query
+        date_desde = date_hasta - delta_five_months
+        print(i)
+        print(key)
+
+
+## Excel files are printed in "C:\Users\paquinte\PycharmProjects\BolsaDeValoresCol_analisys"
+## this opens and concatenates
+# read them in
+excels = [pd.ExcelFile(name) for name in glob.glob("*.xls")]
+
+# turn them into dataframes
+ #frames = [x.parse(x.sheet_names[0],header=, index_col=None) for x in excels]
+frames = [ pd.read_excel(x,header=1) for x in excels]
+
+#type(frames[1])
+# frames[1].columns
+# frames.size
+
+# concatenate them..
+combined = pd.concat(frames)
+# combined.fecha.max()
+# combined.fecha.min()
+# combined.shape
+
+combined.drop_duplicates(inplace=True)  # delete duplicate rows
+combined.drop(combined.columns[0],axis=1, inplace=True) # delete empty first row
+combined.to_csv("All_Stocks_historical.csv")
+
